@@ -1,3 +1,4 @@
+
 export interface Template {
   id: string;
   name: string;
@@ -47,12 +48,12 @@ export interface CaptionStyle {
 
 export enum AppState {
   HOME = 'HOME',
+  CAPTION_UPLOAD = 'CAPTION_UPLOAD',
+  CAPTION_EDITOR = 'CAPTION_EDITOR',
   TEMPLATE_SELECTION = 'TEMPLATE_SELECTION',
   PROMPT_INPUT = 'PROMPT_INPUT',
   GENERATING = 'GENERATING',
   RESULT = 'RESULT',
-  CAPTION_UPLOAD = 'CAPTION_UPLOAD',
-  CAPTION_EDITOR = 'CAPTION_EDITOR',
 }
 
 // Extend Window interface for AI Studio global
