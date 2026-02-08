@@ -1,48 +1,48 @@
 import { GoogleGenAI } from "@google/genai";
 import { Caption } from "../types";
 
-// Ensure the user has selected an API key via AI Studio
+// Ensure the user has selected an API key via AI Studio or Env Var
 export const ensureApiKey = async (): Promise<boolean> => {
+  // Priority 1: Environment Variable (Vercel / .env)
+  if (process.env.API_KEY) return true;
+
+  // Priority 2: IDX / AI Studio Internal Environment
   if (window.aistudio) {
     const hasKey = await window.aistudio.hasSelectedApiKey();
     if (!hasKey) {
-      await window.aistudio.openSelectKey();
-      // Assume success after prompt closes or handle retry in UI
-      return true; 
+      try {
+          await window.aistudio.openSelectKey();
+      } catch (e) {
+          console.error("Key selection dismissed or failed", e);
+      }
     }
-    return true;
+    return await window.aistudio.hasSelectedApiKey(); 
   }
-  return !!process.env.API_KEY;
+  
+  return false;
 };
 
-// Generate a creative prompt in English based on user input, optionally with Hindi/Hinglish flavor
+// Generate a creative prompt using the lightweight Flash model (Free Tier friendly)
 export const generateEnhancedPrompt = async (userInput: string, style: string): Promise<{ visualPrompt: string; hinglishCaption: string }> => {
   await ensureApiKey();
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   const prompt = `
-    You are a creative video director assisting in creating a video prompt for an AI video generator.
-    
+    You are a creative video director.
     User Idea: "${userInput}"
     Target Style: "${style}"
     
-    Task 1: Create a highly detailed visual prompt (in English) describing the scene, lighting, camera movement, and mood for a video generation model. Keep it under 50 words.
-    Task 2: Write a short, catchy caption (max 10 words) in "Hinglish" (Hindi written in English script or mixed Hindi/English) that matches the mood.
+    Task 1: Create a highly detailed visual prompt (in English, max 50 words) for a video generation model.
+    Task 2: Write a short, catchy caption (max 10 words) in "Hinglish" (Hindi written in English script).
     
-    Output JSON format:
-    {
-      "visualPrompt": "...",
-      "hinglishCaption": "..."
-    }
+    Output JSON: { "visualPrompt": "...", "hinglishCaption": "..." }
   `;
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-2.5-flash', // Switched to Flash for speed and free-tier compatibility
       contents: prompt,
-      config: {
-        responseMimeType: 'application/json'
-      }
+      config: { responseMimeType: 'application/json' }
     });
 
     const text = response.text;
@@ -50,23 +50,21 @@ export const generateEnhancedPrompt = async (userInput: string, style: string): 
     return JSON.parse(text);
   } catch (error) {
     console.error("Error enhancing prompt:", error);
-    // Fallback
-    return {
-      visualPrompt: `${style}, ${userInput}`,
-      hinglishCaption: userInput
-    };
+    return { visualPrompt: `${style}, ${userInput}`, hinglishCaption: userInput };
   }
 };
 
 export const generateVideo = async (visualPrompt: string): Promise<string> => {
-  await ensureApiKey();
+  const hasKey = await ensureApiKey();
+  if (!hasKey && !process.env.API_KEY) {
+      throw new Error("Missing API Key. Please add API_KEY to your Vercel Environment Variables.");
+  }
+  
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
-  console.log("Starting video generation with prompt:", visualPrompt);
 
   try {
     let operation = await ai.models.generateVideos({
-      model: 'veo-3.1-generate-preview',
+      model: 'veo-3.1-generate-preview', // Veo requires a PAID/BILLED API Key
       prompt: visualPrompt,
       config: {
         numberOfVideos: 1,
@@ -75,30 +73,23 @@ export const generateVideo = async (visualPrompt: string): Promise<string> => {
       }
     });
 
-    console.log("Operation started:", operation);
-
     while (!operation.done) {
       await new Promise(resolve => setTimeout(resolve, 5000));
       operation = await ai.operations.getVideosOperation({ operation: operation });
-      console.log("Polling status...", operation);
     }
 
-    if (operation.error) {
-      throw new Error(operation.error.message);
-    }
+    if (operation.error) throw new Error(operation.error.message);
 
     const videoUri = operation.response?.generatedVideos?.[0]?.video?.uri;
-    if (!videoUri) {
-      throw new Error("No video URI returned");
-    }
+    if (!videoUri) throw new Error("No video URI returned");
 
     return `${videoUri}&key=${process.env.API_KEY}`;
 
   } catch (error: any) {
     console.error("Video generation failed:", error);
-    if (error.message?.includes("Requested entity was not found") && window.aistudio) {
-        await window.aistudio.openSelectKey();
-        throw new Error("API Key refreshed. Please try again.");
+    // Specific error handling for Veo payment issues
+    if (error.message?.includes("404") || error.message?.includes("not found")) {
+        throw new Error("Veo Model access denied. Ensure your API Key is linked to a PAID Billing Account in Google AI Studio.");
     }
     throw error;
   }
@@ -128,33 +119,21 @@ export const transcribeVideo = async (videoFile: File): Promise<Caption[]> => {
   try {
     const videoPart = await fileToGenerativePart(videoFile);
     
-    // Prompt for Hinglish subtitles with strict short segmentation
+    // Using Gemini 2.5 Flash - This is Free Tier friendly and excellent for transcription
     const prompt = `
-      Analyze the audio in this video and generate subtitles strictly in "Hinglish" (Hindi words written in English Latin script).
-      
-      CRITICAL RULES for Social Media Style:
-      1. Split the text into VERY SHORT segments (maximum 3-5 words per segment). 
-      2. Do NOT write long sentences. Break them up.
-      3. Ensure EVERY spoken word is captured. Do not summarize.
-      4. If there is no speech, describe the sound in brackets [Like this].
-      
-      Return a valid JSON array of objects.
-      Schema:
-      [
-        { "id": "1", "start": 0.5, "end": 1.2, "text": "Short segment here" }
-      ]
-      
-      Times must be in seconds (number).
+      Analyze the audio and generate "Hinglish" subtitles (Hindi in English script).
+      Rules:
+      1. Max 3-4 words per segment.
+      2. Capture every spoken word accurately.
+      3. Return JSON array: [{ "id": "1", "start": 0.0, "end": 1.0, "text": "..." }]
     `;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-preview', // Using Pro for better video understanding and timestamp logic
+      model: 'gemini-2.5-flash', // CHANGED: Using Flash model for Free Tier support
       contents: {
         parts: [videoPart, { text: prompt }]
       },
-      config: {
-        responseMimeType: 'application/json'
-      }
+      config: { responseMimeType: 'application/json' }
     });
 
     const text = response.text;

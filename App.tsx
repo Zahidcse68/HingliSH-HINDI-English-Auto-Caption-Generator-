@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { AppState } from './types';
 import { VideoGenerator } from './components/VideoGenerator';
 import { CaptionEditor } from './components/CaptionEditor';
-import { Video, Languages, Clapperboard, Captions } from 'lucide-react';
+import { Video, Languages, Clapperboard, Captions, Zap, Sparkles } from 'lucide-react';
 
 const App: React.FC = () => {
   const [appState, setAppState] = useState<AppState>(AppState.HOME);
@@ -12,31 +12,37 @@ const App: React.FC = () => {
         case AppState.HOME:
             return (
                 <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto mt-12 animate-fade-in-up">
-                    {/* Mode 1: Text to Video */}
+                    {/* Mode 1: Text to Video (Paid) */}
                     <div 
                         onClick={() => setAppState(AppState.TEMPLATE_SELECTION)}
-                        className="group bg-slate-800 hover:bg-slate-700 p-8 rounded-2xl border-2 border-slate-700 hover:border-indigo-500 cursor-pointer transition-all hover:scale-105 shadow-2xl"
+                        className="relative group bg-slate-800 hover:bg-slate-700 p-8 rounded-2xl border-2 border-slate-700 hover:border-indigo-500 cursor-pointer transition-all hover:scale-105 shadow-2xl"
                     >
+                        <div className="absolute top-4 right-4 bg-indigo-500/20 text-indigo-300 text-[10px] font-bold px-2 py-1 rounded-full border border-indigo-500/50 flex items-center gap-1">
+                            <Sparkles className="w-3 h-3" /> PAID PLAN
+                        </div>
                         <div className="w-16 h-16 bg-gradient-to-br from-indigo-500 to-purple-500 rounded-2xl flex items-center justify-center mb-6 shadow-lg shadow-indigo-500/20 group-hover:rotate-12 transition-transform">
                             <Clapperboard className="w-8 h-8 text-white" />
                         </div>
                         <h2 className="text-2xl font-bold text-white mb-2">Generate Video</h2>
                         <p className="text-slate-400">
-                            Create professional videos from text prompts using Google Veo. Includes Hindi & English mixing.
+                            Create professional videos from text using Google Veo. Requires a billed API key.
                         </p>
                     </div>
 
-                    {/* Mode 2: Auto Captions */}
+                    {/* Mode 2: Auto Captions (Free) */}
                     <div 
                         onClick={() => setAppState(AppState.CAPTION_UPLOAD)}
-                        className="group bg-slate-800 hover:bg-slate-700 p-8 rounded-2xl border-2 border-slate-700 hover:border-pink-500 cursor-pointer transition-all hover:scale-105 shadow-2xl"
+                        className="relative group bg-slate-800 hover:bg-slate-700 p-8 rounded-2xl border-2 border-slate-700 hover:border-pink-500 cursor-pointer transition-all hover:scale-105 shadow-2xl"
                     >
+                        <div className="absolute top-4 right-4 bg-green-500/20 text-green-300 text-[10px] font-bold px-2 py-1 rounded-full border border-green-500/50 flex items-center gap-1">
+                            <Zap className="w-3 h-3" /> FREE TIER
+                        </div>
                         <div className="w-16 h-16 bg-gradient-to-br from-pink-500 to-orange-500 rounded-2xl flex items-center justify-center mb-6 shadow-lg shadow-pink-500/20 group-hover:-rotate-12 transition-transform">
                             <Captions className="w-8 h-8 text-white" />
                         </div>
                         <h2 className="text-2xl font-bold text-white mb-2">Auto Captions</h2>
                         <p className="text-slate-400">
-                            Upload your video. We'll add trending CapCut-style Hinglish subtitles automatically.
+                            Upload your video. We'll add trending CapCut-style Hinglish subtitles for free.
                         </p>
                     </div>
                 </div>
@@ -83,7 +89,7 @@ const App: React.FC = () => {
       </main>
 
       <footer className="py-6 text-center text-slate-600 text-sm">
-        <p>© 2025 DesiCut AI. Powered by Gemini Veo & Pro.</p>
+        <p>© 2025 DesiCut AI. Powered by Gemini Veo & Flash.</p>
       </footer>
     </div>
   );

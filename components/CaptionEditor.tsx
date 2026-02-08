@@ -41,14 +41,21 @@ export const CaptionEditor: React.FC<CaptionEditorProps> = ({ onBack }) => {
   const audioCtxRef = useRef<AudioContext | null>(null);
   const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null);
 
-  // Cleanup AudioContext on unmount
+  // Robust Cleanup: Reset AudioContext when file changes or unmounts
   useEffect(() => {
+    // Reset refs when fileUrl changes
+    sourceNodeRef.current = null;
+    if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
+        audioCtxRef.current.close();
+        audioCtxRef.current = null;
+    }
+
     return () => {
         if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
             audioCtxRef.current.close();
         }
     };
-  }, []);
+  }, [fileUrl]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -295,12 +302,14 @@ export const CaptionEditor: React.FC<CaptionEditorProps> = ({ onBack }) => {
     setIsPlaying(false);
     video.currentTime = 0;
     
+    // Initialize Audio Context ONLY ONCE
     if (!audioCtxRef.current) {
         const AudioContext = window.AudioContext || window.webkitAudioContext;
         audioCtxRef.current = new AudioContext();
     }
     const audioCtx = audioCtxRef.current;
     
+    // Initialize Source Node ONLY ONCE and connect to default destination (speakers)
     if (!sourceNodeRef.current) {
         sourceNodeRef.current = audioCtx.createMediaElementSource(video);
         sourceNodeRef.current.connect(audioCtx.destination);
@@ -397,7 +406,15 @@ export const CaptionEditor: React.FC<CaptionEditorProps> = ({ onBack }) => {
         
         {/* CENTER: Canvas Player (8 cols) */}
         <div className="lg:col-span-8 bg-black rounded-2xl overflow-hidden relative flex items-center justify-center shadow-2xl border border-slate-800">
-           <video ref={videoRef} src={fileUrl!} className="hidden" onTimeUpdate={() => setCurrentTime(videoRef.current?.currentTime || 0)} crossOrigin="anonymous" playsInline />
+           <video 
+              key={fileUrl} /* CRITICAL: Force remount to reset audio connections */
+              ref={videoRef} 
+              src={fileUrl!} 
+              className="hidden" 
+              onTimeUpdate={() => setCurrentTime(videoRef.current?.currentTime || 0)} 
+              crossOrigin="anonymous" 
+              playsInline 
+            />
            <canvas 
              ref={canvasRef}
              className="max-w-full max-h-[75vh] w-auto h-auto cursor-pointer object-contain"
