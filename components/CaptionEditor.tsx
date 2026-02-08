@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { Upload, Play, Pause, Download, Type, MonitorPlay, Move, Minus, Plus, Settings, Palette, Zap, Video as VideoIcon, RotateCcw, List, Trash2, PlusCircle } from 'lucide-react';
+import { Upload, Play, Pause, Download, Type, MonitorPlay, Move, Minus, Plus, Settings, Palette, Zap, Video as VideoIcon, RotateCcw, List, Trash2, PlusCircle, Gauge } from 'lucide-react';
 import { transcribeVideo } from '../services/geminiService';
 import { CAPTION_STYLES } from '../constants';
 import { Caption, CaptionStyle, AnimationType } from '../types';
@@ -25,9 +25,9 @@ export const CaptionEditor: React.FC<CaptionEditorProps> = ({ onBack }) => {
   
   // --- Video State ---
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
+  const [exportQuality, setExportQuality] = useState<'standard' | 'hd' | 'ultra'>('hd');
   
   // --- Editor UI State ---
-  // Added 'captions' tab and made it default
   const [activeTab, setActiveTab] = useState<'captions' | 'presets' | 'text' | 'bg' | 'anim' | 'video'>('captions');
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -68,7 +68,7 @@ export const CaptionEditor: React.FC<CaptionEditorProps> = ({ onBack }) => {
     try {
       const generatedCaptions = await transcribeVideo(file);
       setCaptions(generatedCaptions);
-      setActiveTab('captions'); // Switch to edit view immediately
+      setActiveTab('captions'); 
     } catch (e: any) {
       alert("Error generating captions: " + e.message);
     } finally {
@@ -101,7 +101,6 @@ export const CaptionEditor: React.FC<CaptionEditorProps> = ({ onBack }) => {
         end: Number((start + 2).toFixed(2)), 
         text: "New Text" 
     }]);
-    // Scroll to bottom logic could go here
   };
 
   // --- Rendering Engine ---
@@ -296,25 +295,26 @@ export const CaptionEditor: React.FC<CaptionEditorProps> = ({ onBack }) => {
     setIsPlaying(false);
     video.currentTime = 0;
     
-    // Initialize Audio Context ONLY ONCE
     if (!audioCtxRef.current) {
         const AudioContext = window.AudioContext || window.webkitAudioContext;
         audioCtxRef.current = new AudioContext();
     }
     const audioCtx = audioCtxRef.current;
     
-    // Initialize Source Node ONLY ONCE and connect to default destination (speakers)
     if (!sourceNodeRef.current) {
         sourceNodeRef.current = audioCtx.createMediaElementSource(video);
         sourceNodeRef.current.connect(audioCtx.destination);
     }
     const source = sourceNodeRef.current;
     
-    // Create a NEW destination specific for this recording session
     const dest = audioCtx.createMediaStreamDestination();
     source.connect(dest);
     
-    const canvasStream = canvasRef.current.captureStream(60); 
+    // FPS and Bitrate based on quality
+    const fps = 60;
+    const bitrate = exportQuality === 'ultra' ? 25000000 : exportQuality === 'hd' ? 12000000 : 5000000;
+
+    const canvasStream = canvasRef.current.captureStream(fps); 
     const combinedStream = new MediaStream([
         ...canvasStream.getVideoTracks(),
         ...dest.stream.getAudioTracks()
@@ -328,7 +328,7 @@ export const CaptionEditor: React.FC<CaptionEditorProps> = ({ onBack }) => {
 
     const mediaRecorder = new MediaRecorder(combinedStream, {
         mimeType,
-        videoBitsPerSecond: 15000000 
+        videoBitsPerSecond: bitrate
     });
 
     const chunks: Blob[] = [];
@@ -338,14 +338,10 @@ export const CaptionEditor: React.FC<CaptionEditorProps> = ({ onBack }) => {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `desicut-hd-${Date.now()}.webm`;
+        a.download = `desicut-${exportQuality}-${Date.now()}.webm`;
         a.click();
         
-        // Clean up ONLY the recording connection. 
-        // We leave source -> audioCtx.destination connected for playback.
-        // We leave audioCtx open for next time.
         source.disconnect(dest);
-        
         setIsPlaying(false);
         video.playbackRate = 1;
         setPlaybackSpeed(1);
@@ -389,14 +385,11 @@ export const CaptionEditor: React.FC<CaptionEditorProps> = ({ onBack }) => {
                     <span className="text-xs w-12 text-center font-mono">{(scale * 100).toFixed(0)}%</span>
                     <button onClick={() => setScale(s => Math.min(3, s + 0.1))} className="p-1 hover:bg-slate-800 rounded text-slate-300"><Plus className="w-4 h-4" /></button>
                 </div>
-                <div className="flex items-center gap-1 text-xs text-indigo-300 bg-indigo-900/30 px-3 py-1.5 rounded-full border border-indigo-500/30">
-                    <Move className="w-3 h-3" /> Drag Text
-                </div>
              </div>
         )}
 
         <button onClick={handleExport} className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white px-5 py-2 rounded-lg flex items-center gap-2 font-bold shadow-lg shadow-indigo-500/20">
-             <Download className="w-4 h-4" /> Export HD
+             <Download className="w-4 h-4" /> Export {exportQuality.toUpperCase()}
         </button>
       </div>
 
@@ -443,17 +436,16 @@ export const CaptionEditor: React.FC<CaptionEditorProps> = ({ onBack }) => {
                         <button onClick={() => setActiveTab('text')} className={`flex-1 py-3 px-2 text-xs font-bold uppercase tracking-wider flex justify-center items-center gap-2 ${activeTab === 'text' ? 'text-pink-400 border-b-2 border-pink-400 bg-slate-800' : 'text-slate-500 hover:text-slate-300'}`}>
                            <Type className="w-3 h-3" /> Text
                         </button>
-                        <button onClick={() => setActiveTab('bg')} className={`flex-1 py-3 px-2 text-xs font-bold uppercase tracking-wider flex justify-center items-center gap-2 ${activeTab === 'bg' ? 'text-green-400 border-b-2 border-green-400 bg-slate-800' : 'text-slate-500 hover:text-slate-300'}`}>
-                           <Palette className="w-3 h-3" /> BG
-                        </button>
                         <button onClick={() => setActiveTab('anim')} className={`flex-1 py-3 px-2 text-xs font-bold uppercase tracking-wider flex justify-center items-center gap-2 ${activeTab === 'anim' ? 'text-yellow-400 border-b-2 border-yellow-400 bg-slate-800' : 'text-slate-500 hover:text-slate-300'}`}>
                            <Zap className="w-3 h-3" /> Anim
+                        </button>
+                        <button onClick={() => setActiveTab('video')} className={`flex-1 py-3 px-2 text-xs font-bold uppercase tracking-wider flex justify-center items-center gap-2 ${activeTab === 'video' ? 'text-blue-400 border-b-2 border-blue-400 bg-slate-800' : 'text-slate-500 hover:text-slate-300'}`}>
+                           <VideoIcon className="w-3 h-3" /> Video
                         </button>
                     </div>
 
                     {/* Tab Content */}
                     <div className="flex-1 overflow-y-auto p-4 custom-scrollbar bg-slate-800">
-                        {/* 1. Captions List Editor */}
                         {activeTab === 'captions' && (
                             <div className="space-y-3 pb-8">
                                 <div className="flex justify-between items-center mb-4">
@@ -487,36 +479,13 @@ export const CaptionEditor: React.FC<CaptionEditorProps> = ({ onBack }) => {
                                                         className="w-12 bg-transparent text-xs text-center focus:outline-none font-mono text-slate-300"
                                                     />
                                                 </div>
-                                                <button 
-                                                    onClick={() => {
-                                                        if(videoRef.current) {
-                                                            videoRef.current.currentTime = cap.start;
-                                                            if (!isPlaying) {
-                                                                videoRef.current.play();
-                                                                setIsPlaying(true);
-                                                            }
-                                                        }
-                                                    }}
-                                                    className={`p-1 rounded hover:bg-slate-700 ${isActive ? 'text-indigo-400' : 'text-slate-500'}`}
-                                                >
-                                                    <Play className="w-3 h-3" />
-                                                </button>
-                                                <button onClick={() => deleteCaption(idx)} className="ml-auto text-slate-600 hover:text-red-400 p-1">
-                                                    <Trash2 className="w-3 h-3" />
-                                                </button>
+                                                <button onClick={() => {if(videoRef.current){videoRef.current.currentTime = cap.start; videoRef.current.play(); setIsPlaying(true);}}} className={`p-1 rounded hover:bg-slate-700 ${isActive ? 'text-indigo-400' : 'text-slate-500'}`}><Play className="w-3 h-3" /></button>
+                                                <button onClick={() => deleteCaption(idx)} className="ml-auto text-slate-600 hover:text-red-400 p-1"><Trash2 className="w-3 h-3" /></button>
                                            </div>
-                                           <textarea 
-                                                value={cap.text}
-                                                onChange={(e) => updateCaption(idx, 'text', e.target.value)}
-                                                className="w-full bg-slate-900/50 border border-slate-700 rounded p-2 text-sm text-slate-200 focus:border-indigo-500 focus:outline-none resize-none font-medium"
-                                                rows={2}
-                                           />
+                                           <textarea value={cap.text} onChange={(e) => updateCaption(idx, 'text', e.target.value)} className="w-full bg-slate-900/50 border border-slate-700 rounded p-2 text-sm text-slate-200 focus:border-indigo-500 focus:outline-none resize-none font-medium" rows={2}/>
                                         </div>
                                     )
                                 })}
-                                <button onClick={addCaption} className="w-full py-3 border border-dashed border-slate-600 text-slate-400 rounded-xl hover:border-indigo-500 hover:text-indigo-400 transition-colors text-sm font-bold flex items-center justify-center gap-2">
-                                    <PlusCircle className="w-4 h-4" /> Add New Caption
-                                </button>
                             </div>
                         )}
 
@@ -525,15 +494,9 @@ export const CaptionEditor: React.FC<CaptionEditorProps> = ({ onBack }) => {
                                 <h4 className="text-xs font-bold text-slate-500 uppercase">CapCut Style Templates</h4>
                                 <div className="grid grid-cols-2 gap-3">
                                     {CAPTION_STYLES.map(style => (
-                                        <button 
-                                            key={style.id}
-                                            onClick={() => applyTemplate(style)}
-                                            className={`p-3 rounded-xl text-left transition-all border ${activeStyle.id === style.id ? 'bg-indigo-900/50 border-indigo-500 ring-1 ring-indigo-500' : 'bg-slate-700 border-slate-600 hover:bg-slate-600'}`}
-                                        >
+                                        <button key={style.id} onClick={() => applyTemplate(style)} className={`p-3 rounded-xl text-left transition-all border ${activeStyle.id === style.id ? 'bg-indigo-900/50 border-indigo-500 ring-1 ring-indigo-500' : 'bg-slate-700 border-slate-600 hover:bg-slate-600'}`}>
                                             <div className="font-bold text-sm text-white mb-1">{style.name}</div>
-                                            <div className="h-1 w-full bg-slate-600 rounded-full overflow-hidden">
-                                                <div className="h-full bg-gradient-to-r from-indigo-500 to-pink-500" style={{width: '60%'}}></div>
-                                            </div>
+                                            <div className="h-1 w-full bg-slate-600 rounded-full overflow-hidden"><div className="h-full bg-gradient-to-r from-indigo-500 to-pink-500" style={{width: '60%'}}></div></div>
                                         </button>
                                     ))}
                                 </div>
@@ -542,126 +505,37 @@ export const CaptionEditor: React.FC<CaptionEditorProps> = ({ onBack }) => {
 
                         {activeTab === 'text' && (
                             <div className="space-y-6">
-                                <div>
-                                    <label className="text-xs font-bold text-slate-400 mb-2 block">Font Color</label>
-                                    <div className="flex items-center gap-2 bg-slate-700 p-2 rounded-lg">
-                                        <input type="color" value={activeStyle.color} onChange={e => setActiveStyle({...activeStyle, color: e.target.value})} className="w-8 h-8 rounded cursor-pointer bg-transparent border-none p-0" />
-                                        <span className="text-sm font-mono text-slate-300">{activeStyle.color}</span>
-                                    </div>
-                                </div>
-                                <div>
-                                    <div className="flex justify-between mb-2">
-                                        <label className="text-xs font-bold text-slate-400">Stroke (Outline)</label>
-                                        <span className="text-xs text-slate-500">{activeStyle.strokeWidth || 0}px</span>
-                                    </div>
-                                    <div className="flex items-center gap-2 bg-slate-700 p-2 rounded-lg">
-                                        <input 
-                                            type="color" 
-                                            value={activeStyle.strokeColor || '#000000'} 
-                                            onChange={e => setActiveStyle({...activeStyle, strokeColor: e.target.value})} 
-                                            className="w-8 h-8 rounded cursor-pointer bg-transparent border-none p-0" 
-                                        />
-                                        <input 
-                                            type="range" 
-                                            min="0" 
-                                            max="30" 
-                                            step="1"
-                                            value={activeStyle.strokeWidth || 0} 
-                                            onChange={e => setActiveStyle({...activeStyle, strokeWidth: parseInt(e.target.value)})} 
-                                            className="flex-1 accent-indigo-500" 
-                                        />
-                                    </div>
-                                </div>
-                                <div>
-                                    <label className="text-xs font-bold text-slate-400 mb-2 block">Font Size (Base)</label>
-                                    <input type="range" min="10" max="100" value={activeStyle.fontSize} onChange={e => setActiveStyle({...activeStyle, fontSize: parseInt(e.target.value)})} className="w-full accent-indigo-500" />
-                                </div>
+                                <div><label className="text-xs font-bold text-slate-400 mb-2 block">Font Color</label><div className="flex items-center gap-2 bg-slate-700 p-2 rounded-lg"><input type="color" value={activeStyle.color} onChange={e => setActiveStyle({...activeStyle, color: e.target.value})} className="w-8 h-8 rounded cursor-pointer bg-transparent border-none p-0" /><span className="text-sm font-mono text-slate-300">{activeStyle.color}</span></div></div>
+                                <div><label className="text-xs font-bold text-slate-400 mb-2 block">Stroke Width</label><input type="range" min="0" max="10" value={activeStyle.strokeWidth || 0} onChange={e => setActiveStyle({...activeStyle, strokeWidth: parseInt(e.target.value)})} className="w-full accent-indigo-500" /></div>
                             </div>
                         )}
 
-                        {activeTab === 'bg' && (
-                            <div className="space-y-6">
-                                <div>
-                                    <label className="text-xs font-bold text-slate-400 mb-2 block">Background Color</label>
-                                    <div className="flex items-center gap-2 bg-slate-700 p-2 rounded-lg">
-                                        <input type="color" value={activeStyle.backgroundColor || '#000000'} onChange={e => setActiveStyle({...activeStyle, backgroundColor: e.target.value})} className="w-8 h-8 rounded cursor-pointer bg-transparent border-none p-0" />
-                                        <button onClick={() => setActiveStyle({...activeStyle, backgroundColor: undefined})} className="text-xs text-red-400 hover:underline">Remove</button>
-                                    </div>
-                                </div>
-                                <div>
-                                    <label className="text-xs font-bold text-slate-400 mb-2 block">Horizontal Padding</label>
-                                    <input type="range" min="0" max="50" value={activeStyle.paddingX} onChange={e => setActiveStyle({...activeStyle, paddingX: parseInt(e.target.value)})} className="w-full accent-green-500" />
-                                </div>
-                                <div>
-                                    <label className="text-xs font-bold text-slate-400 mb-2 block">Vertical Padding</label>
-                                    <input type="range" min="0" max="50" value={activeStyle.paddingY} onChange={e => setActiveStyle({...activeStyle, paddingY: parseInt(e.target.value)})} className="w-full accent-green-500" />
-                                </div>
-                                <div>
-                                    <label className="text-xs font-bold text-slate-400 mb-2 block">Rounded Corners</label>
-                                    <input type="range" min="0" max="50" value={activeStyle.borderRadius} onChange={e => setActiveStyle({...activeStyle, borderRadius: parseInt(e.target.value)})} className="w-full accent-green-500" />
-                                </div>
-                            </div>
-                        )}
-
-                        {activeTab === 'anim' && (
+                        {activeTab === 'video' && (
                              <div className="space-y-6">
                                 <div>
-                                    <label className="text-xs font-bold text-slate-400 mb-2 block">Animation Type</label>
-                                    <div className="grid grid-cols-2 gap-2">
-                                        {ANIMATION_TYPES.map(anim => (
+                                    <label className="text-xs font-bold text-slate-400 mb-2 block flex items-center gap-1"><Gauge className="w-3 h-3" /> Export Quality</label>
+                                    <div className="grid grid-cols-3 gap-2">
+                                        {(['standard', 'hd', 'ultra'] as const).map(q => (
                                             <button 
-                                                key={anim}
-                                                onClick={() => setActiveStyle({...activeStyle, animation: anim})}
-                                                className={`px-3 py-2 rounded-lg text-xs font-bold uppercase ${activeStyle.animation === anim ? 'bg-yellow-500 text-black' : 'bg-slate-700 text-slate-400 hover:bg-slate-600'}`}
+                                                key={q}
+                                                onClick={() => setExportQuality(q)}
+                                                className={`py-2 rounded-lg text-[10px] font-bold uppercase border transition-all ${exportQuality === q ? 'bg-indigo-600 border-indigo-400 text-white' : 'bg-slate-700 border-slate-600 text-slate-500'}`}
                                             >
-                                                {anim}
+                                                {q}
                                             </button>
                                         ))}
                                     </div>
+                                    <p className="text-[10px] text-slate-500 mt-2">
+                                        {exportQuality === 'ultra' ? 'High Bitrate (25Mbps) - Best for YouTube/Reels.' : exportQuality === 'hd' ? 'Medium Bitrate (12Mbps) - Recommended.' : 'Low Bitrate (5Mbps) - Fast upload.'}
+                                    </p>
                                 </div>
-                                {(activeStyle.animation === 'karaoke' || activeStyle.animation === 'highlight-word' || activeStyle.animation === 'pop') && (
-                                    <div>
-                                        <label className="text-xs font-bold text-slate-400 mb-2 block">Active Word Color</label>
-                                        <div className="flex items-center gap-2 bg-slate-700 p-2 rounded-lg">
-                                             <input type="color" value={activeStyle.highlightColor || '#ffff00'} onChange={e => setActiveStyle({...activeStyle, highlightColor: e.target.value})} className="w-8 h-8 rounded cursor-pointer border-none bg-transparent" />
-                                        </div>
-                                    </div>
-                                )}
-                                {activeStyle.animation === 'highlight-word' && (
-                                    <div>
-                                        <label className="text-xs font-bold text-slate-400 mb-2 block">Highlight Background</label>
-                                        <div className="flex items-center gap-2 bg-slate-700 p-2 rounded-lg">
-                                             <input type="color" value={activeStyle.highlightBgColor || '#ffff00'} onChange={e => setActiveStyle({...activeStyle, highlightBgColor: e.target.value})} className="w-8 h-8 rounded cursor-pointer border-none bg-transparent" />
-                                        </div>
-                                    </div>
-                                )}
-                             </div>
-                        )}
-                        
-                         {activeTab === 'video' && (
-                             <div className="space-y-6">
                                 <div>
                                     <label className="text-xs font-bold text-slate-400 mb-2 block">Playback Speed</label>
                                     <div className="flex gap-2">
                                         {[0.5, 1.0, 1.5, 2.0].map(speed => (
-                                            <button 
-                                                key={speed}
-                                                onClick={() => handlePlaybackSpeed(speed)}
-                                                className={`flex-1 py-2 rounded-lg text-sm font-bold ${playbackSpeed === speed ? 'bg-blue-500 text-white' : 'bg-slate-700 text-slate-400'}`}
-                                            >
-                                                {speed}x
-                                            </button>
+                                            <button key={speed} onClick={() => handlePlaybackSpeed(speed)} className={`flex-1 py-2 rounded-lg text-sm font-bold ${playbackSpeed === speed ? 'bg-blue-500 text-white' : 'bg-slate-700 text-slate-400'}`}>{speed}x</button>
                                         ))}
                                     </div>
-                                </div>
-                                <div className="p-4 bg-slate-700/50 rounded-xl">
-                                    <div className="flex items-center gap-2 text-slate-400 mb-2">
-                                        <RotateCcw className="w-4 h-4" />
-                                        <span className="text-xs font-bold uppercase">Reverse Video?</span>
-                                    </div>
-                                    <p className="text-xs text-slate-500">
-                                        Note: Reverse processing is currently disabled for web performance. Please use speed controls to create slo-mo or fast-forward effects.
-                                    </p>
                                 </div>
                              </div>
                         )}
